@@ -93,6 +93,7 @@ jobs:
           if ($gravada) { "senha permanente gravada em $($gravada.FullName)" } else { "::error::senha permanente não gravada"; throw "senha" }
           $id = (& $exe.FullName --get-id 2>&1 | Out-String).Trim()
           "ID: $id"
-          if ($id -notmatch '^\d{9,10}$') { throw "ID inválido" }
+          # O RustDesk gera IDs numéricos de tamanho variável (8 a 10 dígitos na prática).
+          if ($id -notmatch '^\d{6,12}$') { throw "ID inválido" }
           # Dar tempo para o serviço se registrar no servidor (o ID é conferido no hbbs).
           Start-Sleep 60
