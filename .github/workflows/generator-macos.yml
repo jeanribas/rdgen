@@ -153,7 +153,14 @@ jobs:
           
           # Update Xcode project settings
           sed -i '' -e 's/PRODUCT_NAME = "RustDesk"/PRODUCT_NAME = "${{ env.appname }}"/' ./flutter/macos/Runner.xcodeproj/project.pbxproj
-          sed -i '' -e 's/PRODUCT_BUNDLE_IDENTIFIER = ".*"/PRODUCT_BUNDLE_IDENTIFIER = "com.${{ env.appname }}.app"/' ./flutter/macos/Runner.xcodeproj/project.pbxproj
+          # ASSIST: no RustDesk 1.5.0 o valor vem sem aspas (com.carriez.rustdesk;) e o padrão
+          # antigo, só com aspas, não pegava; o app saía com o bundle id do RustDesk oficial e o
+          # macOS misturava as permissões de Gravação de Tela dos dois apps.
+          sed -i '' -E 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]+;/PRODUCT_BUNDLE_IDENTIFIER = "com.${{ env.appname }}.app";/' ./flutter/macos/Runner.xcodeproj/project.pbxproj
+          if grep -nE 'PRODUCT_BUNDLE_IDENTIFIER = .*carriez' ./flutter/macos/Runner.xcodeproj/project.pbxproj ./flutter/macos/Runner/Configs/AppInfo.xcconfig; then
+            echo "::error::bundle id do RustDesk oficial ainda presente"; exit 1
+          fi
+          grep -hE 'PRODUCT_BUNDLE_IDENTIFIER' ./flutter/macos/Runner.xcodeproj/project.pbxproj ./flutter/macos/Runner/Configs/AppInfo.xcconfig | sort -u
 
           # Update CMake settings
           if [ -f "./flutter/macos/CMakeLists.txt" ]; then
