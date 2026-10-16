@@ -609,6 +609,8 @@ jobs:
           continue_on_error: true
           command: |
             Invoke-WebRequest -Uri ${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}"&"uuid=${{ env.logolink_uuid }} -OutFile ./rustdesk/data/flutter_assets/assets/logo.png
+            # ASSIST: logo do modo escuro (o app 1.5.0 usa assets/logo_dark.png no tema escuro)
+            Invoke-WebRequest -Uri ${{ env.logolink_url }}/get_png?filename=logo_dark.png"&"uuid=${{ env.logolink_uuid }} -OutFile ./rustdesk/data/flutter_assets/assets/logo_dark.png
 
       - name: find Runner.res
         # Windows: find Runner.res (compiled from ./flutter/windows/runner/Runner.rc), copy to ./Runner.res
