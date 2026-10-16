@@ -269,6 +269,11 @@ jobs:
           command: |
             wget https://raw.githubusercontent.com/bryangerlach/rdgen/refs/heads/master/.github/patches/allowCustom.py
             python allowCustom.py
+            # ASSIST: conferir antes de compilar que o app vai ler custom_.txt sem checar assinatura
+            # e de onde: no RustDesk 1.5.0 o macOS lê de Contents/Resources (../Resources).
+            grep -q 'custom_.txt' src/common.rs || { echo "::error::allowCustom.py não trocou custom.txt"; exit 1; }
+            if grep -q '5Qbwsde3unUcJBtrx9ZkvUmwFNoExHzpryHuPUdqlWM=' src/common.rs; then echo "::error::checagem de assinatura do custom ainda presente"; exit 1; fi
+            grep -q '"../Resources"' src/common.rs || { echo "::error::load_custom_client não lê mais de ../Resources; revisar o passo de embutir"; exit 1; }
             wget https://raw.githubusercontent.com/bryangerlach/rdgen/refs/heads/master/.github/patches/removeSetupServerTip.diff
             git apply removeSetupServerTip.diff
             # sed -i '/intl:/a \ \ archive: ^3.6.1' ./flutter/pubspec.yaml
@@ -556,8 +561,12 @@ jobs:
         run: |
           APP=$(find ./flutter/build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -n 1)
           echo "App bundle: $APP"
-          echo -n '${{ env.custom }}' > "$APP/Contents/MacOS/custom_.txt"
-          ls -l "$APP/Contents/MacOS/custom_.txt"
+          # ASSIST: o RustDesk 1.5.0 lê <exe>/../Resources/custom_.txt no macOS. Em Contents/MacOS
+          # o arquivo era ignorado: o app saía sem modo (recebe/controla), sem nome próprio e com a
+          # pasta de configuração do RustDesk oficial (com.carriez.RustDesk).
+          echo -n '${{ env.custom }}' > "$APP/Contents/Resources/custom_.txt"
+          test -s "$APP/Contents/Resources/custom_.txt" || { echo "::error::custom_.txt não gravado"; exit 1; }
+          ls -l "$APP/Contents/Resources/custom_.txt"
       
       - name: Install rcodesign tool
         if: env.MACOS_P12_BASE64 != null
