@@ -70,8 +70,9 @@ jobs:
         shell: pwsh
         run: |
           $exe = "$env:ProgramFiles\Suporte\Suporte.exe"
-          Start-Process $exe -ArgumentList "--uninstall-service" -Wait; Start-Sleep 10
-          Start-Process $exe -ArgumentList "--install-service" -Wait; Start-Sleep 20
+          # sem -Wait: o processo pode não terminar sozinho; espera com limite
+          $p = Start-Process $exe -ArgumentList "--uninstall-service" -PassThru; Wait-Process -Id $p.Id -Timeout 90 -ErrorAction SilentlyContinue; Start-Sleep 10
+          $p = Start-Process $exe -ArgumentList "--install-service" -PassThru; Wait-Process -Id $p.Id -Timeout 90 -ErrorAction SilentlyContinue; Start-Sleep 20
           $svc = Get-Service -Name "Suporte" -ErrorAction SilentlyContinue
           "serviço depois: $($svc.Status)"
           $opt = Get-ChildItem "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\Suporte\config" -Filter "Suporte2.toml" -ErrorAction SilentlyContinue
@@ -166,7 +167,7 @@ jobs:
             got=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app/Contents/Info.plist"); echo "$nome bundle id: $got"
             [ "$got" = "$bid" ] || err "$nome bundle id $got (esperado $bid)"
             [ -s "$app/Contents/Resources/custom_.txt" ] && echo "$nome: custom_.txt em Resources" || err "$nome sem Contents/Resources/custom_.txt"
-            find "$app" -path "*flutter_assets/assets/logo_dark.png" | grep -q . && echo "$nome: logo_dark.png presente" || err "$nome sem logo_dark.png"
+            for lg in logo.png logo_dark.png; do [ -n "$(find "$app" -path "*flutter_assets/assets/$lg" -print -quit)" ] && echo "$nome: $lg presente" || err "$nome sem $lg"; done
             cp -R "$app" /Applications/; hdiutil detach "/tmp/m-$nome" -quiet
           done
           for nome in Suporte ASSIST-Tecnico; do open -a "/Applications/$nome.app" || err "não abriu $nome"; done
@@ -194,10 +195,12 @@ jobs:
           cd "$RUNNER_TEMP"
           for f in assist-suporte-x86_64.deb assist-suporte-x86_64.rpm SHA256SUMS; do curl -fsS -u "$DL_USUARIO:$DL_SENHA" -o "$f" "$cli/$f"; done
           grep -E "  assist-suporte-x86_64\.(deb|rpm)$" SHA256SUMS | sha256sum -c - || err "SHA-256"
-          dpkg-deb -c assist-suporte-x86_64.deb | grep -q "usr/share/suporte/custom_.txt" && echo "deb: custom_.txt ao lado do executável" || err "deb sem usr/share/suporte/custom_.txt"
-          dpkg-deb -c assist-suporte-x86_64.deb | grep -q "logo_dark.png" && echo "deb: logo_dark.png presente" || err "deb sem logo_dark.png"
+          # lista em variável: grep -q num pipe com pipefail dá falso negativo (SIGPIPE)
+          deb=$(dpkg-deb -c assist-suporte-x86_64.deb)
+          grep -q "usr/share/suporte/custom_.txt" <<< "$deb" && echo "deb: custom_.txt ao lado do executável" || err "deb sem usr/share/suporte/custom_.txt"
+          grep -q "assets/logo_dark.png" <<< "$deb" && echo "deb: logo_dark.png presente" || err "deb sem logo_dark.png"
           sudo apt-get install -y -qq rpm xvfb >/dev/null
-          rpm -qlp assist-suporte-x86_64.rpm 2>/dev/null | grep -q "/usr/share/suporte/custom_.txt" && echo "rpm: custom_.txt ao lado do executável" || err "rpm sem /usr/share/suporte/custom_.txt"
+          rpml=$(rpm -qlp assist-suporte-x86_64.rpm 2>/dev/null); grep -q "/usr/share/suporte/custom_.txt" <<< "$rpml" && echo "rpm: custom_.txt ao lado do executável" || err "rpm sem /usr/share/suporte/custom_.txt"
           sudo apt-get install -y -qq ./assist-suporte-x86_64.deb >/dev/null || err "deb não instalou"
           bin=$(dpkg -L suporte | grep -E "/usr/share/suporte/suporte$" | head -1); echo "executável: $bin"
           timeout 30 xvfb-run -a "$bin" >/dev/null 2>&1 || true
