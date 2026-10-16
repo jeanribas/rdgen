@@ -134,11 +134,14 @@ jobs:
           # MACSTUFF Update Info.plist
           sed -i '' -e 's|<key>CFBundleName</key>.*<string>.*</string>|<key>CFBundleName</key>\n\t<string>${{ env.appname }}</string>|' ./flutter/macos/Runner/Info.plist
           sed -i '' -e 's|<key>CFBundleDisplayName</key>.*<string>.*</string>|<key>CFBundleDisplayName</key>\n\t<string>${{ env.appname }}</string>|' ./flutter/macos/Runner/Info.plist
-          sed -i '' -e 's|<key>CFBundleIdentifier</key>.*<string>.*</string>|<key>CFBundleIdentifier</key>\n\t<string>com.${{ env.appname }}.app</string>|' ./flutter/macos/Runner/Info.plist
+          # ASSIST: bundle id próprio vindo do config (bundleid); sem ele, o padrão do rdgen.
+          BUNDLE_ID="${{ env.bundleid }}"; [ -z "$BUNDLE_ID" ] && BUNDLE_ID="com.${{ env.appname }}.app"
+          echo "bundle id: $BUNDLE_ID"
+          sed -i '' -e "s|<key>CFBundleIdentifier</key>.*<string>.*</string>|<key>CFBundleIdentifier</key>\n\t<string>$BUNDLE_ID</string>|" ./flutter/macos/Runner/Info.plist
           
           # MACSTUFF Update AppInfo.xcconfig
           sed -i '' -e 's|PRODUCT_NAME = .*|PRODUCT_NAME = ${{ env.appname }}|' ./flutter/macos/Runner/Configs/AppInfo.xcconfig
-          sed -i '' -e 's|PRODUCT_BUNDLE_IDENTIFIER = .*|PRODUCT_BUNDLE_IDENTIFIER = com.${{ env.appname }}.app|' ./flutter/macos/Runner/Configs/AppInfo.xcconfig
+          sed -i '' -e "s|PRODUCT_BUNDLE_IDENTIFIER = .*|PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID|" ./flutter/macos/Runner/Configs/AppInfo.xcconfig
           sed -i '' -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./flutter/macos/Runner/Configs/AppInfo.xcconfig
           sed -i '' -e 's|Purslane Ltd.|${{ env.compname }}|' ./flutter/macos/Runner/Configs/AppInfo.xcconfig
 
@@ -156,7 +159,7 @@ jobs:
           # ASSIST: no RustDesk 1.5.0 o valor vem sem aspas (com.carriez.rustdesk;) e o padrão
           # antigo, só com aspas, não pegava; o app saía com o bundle id do RustDesk oficial e o
           # macOS misturava as permissões de Gravação de Tela dos dois apps.
-          sed -i '' -E 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]+;/PRODUCT_BUNDLE_IDENTIFIER = "com.${{ env.appname }}.app";/' ./flutter/macos/Runner.xcodeproj/project.pbxproj
+          sed -i '' -E "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]+;/PRODUCT_BUNDLE_IDENTIFIER = \"$BUNDLE_ID\";/" ./flutter/macos/Runner.xcodeproj/project.pbxproj
           if grep -nE 'PRODUCT_BUNDLE_IDENTIFIER = .*carriez' ./flutter/macos/Runner.xcodeproj/project.pbxproj ./flutter/macos/Runner/Configs/AppInfo.xcconfig; then
             echo "::error::bundle id do RustDesk oficial ainda presente"; exit 1
           fi
@@ -628,6 +631,9 @@ jobs:
           wget --no-check-certificate \
             -O "$ASSETS_DIR/logo.png" \
             "${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}&uuid=${{ env.logolink_uuid }}"
+          # ASSIST: logo do modo escuro (o app 1.5.0 usa assets/logo_dark.png no tema escuro)
+          curl -fsSL --tlsv1.2 --proto =https "${{ env.logolink_url }}/get_png?filename=logo_dark.png&uuid=${{ env.logolink_uuid }}" -o "$ASSETS_DIR/logo_dark.png"
+          test -s "$ASSETS_DIR/logo_dark.png" || { echo "::error::logo_dark.png não baixado"; exit 1; }
 
       - name: Sign macOS app bundle
         if: env.MACOS_P12_BASE64 != ''
