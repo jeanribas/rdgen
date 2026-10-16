@@ -1,0 +1,207 @@
+# Teste de aceitação dos apps da ASSIST (cliente "Suporte" e "ASSIST-Tecnico").
+# Vive no branch assist/teste-instalacao do fork jeanribas/rdgen (cópia versionada aqui).
+# Roda a cada push no branch. O alvo vem do arquivo teste/alvo do branch:
+#   homologacao -> https://rd.assist.com.br/homologacao/{cliente,tecnico}/   (padrão)
+#   producao    -> https://rd.assist.com.br/downloads/ e /tecnico/
+# Só promover para produção com este teste verde.
+name: Teste de aceitacao (ASSIST)
+
+on:
+  push:
+    branches: [assist/teste-instalacao]
+
+permissions:
+  contents: read
+
+env:
+  DL_USUARIO: ${{ secrets.DL_USUARIO }}
+  DL_SENHA: ${{ secrets.DL_SENHA }}
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout: teste }
+
+      - name: Baixar cliente e técnico do alvo
+        shell: pwsh
+        run: |
+          $alvo = (Get-Content teste/alvo -ErrorAction SilentlyContinue | Select-Object -First 1); if (-not $alvo) { $alvo = "homologacao" }
+          if ($alvo -eq "producao") { $cli = "https://rd.assist.com.br/downloads"; $tec = "https://rd.assist.com.br/tecnico" }
+          else { $cli = "https://rd.assist.com.br/homologacao/cliente"; $tec = "https://rd.assist.com.br/homologacao/tecnico" }
+          "alvo: $alvo"
+          $h = @{ Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$($env:DL_USUARIO):$($env:DL_SENHA)")) }
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\dl" | Out-Null; Set-Location "$env:RUNNER_TEMP\dl"
+          foreach ($par in @(@($cli, "assist-suporte.exe", "SUMS-cli"), @($tec, "assist-tecnico-windows.zip", "SUMS-tec"))) {
+            Invoke-WebRequest "$($par[0])/$($par[1])" -Headers $h -OutFile $par[1]
+            Invoke-WebRequest "$($par[0])/SHA256SUMS" -Headers $h -OutFile $par[2]
+            $esp = ((Select-String -Path $par[2] -Pattern "  $([regex]::Escape($par[1]))$").Line -split ' ')[0]
+            $real = (Get-FileHash $par[1] -Algorithm SHA256).Hash.ToLower()
+            if ($esp -ne $real) { throw "SHA-256 diferente em $($par[1])" }
+            "SHA-256 ok: $($par[1])"
+          }
+          Expand-Archive assist-tecnico-windows.zip -DestinationPath tec -Force
+
+      - name: Instalar o cliente e conferir
+        shell: pwsh
+        run: |
+          Set-Location "$env:RUNNER_TEMP\dl"
+          Start-Process .\assist-suporte.exe -ArgumentList "--silent-install"
+          $limite = (Get-Date).AddMinutes(4)
+          do { Start-Sleep 5; $svc = Get-Service -Name "Suporte" -ErrorAction SilentlyContinue } while (-not $svc -and (Get-Date) -lt $limite)
+          Start-Sleep 20
+          $erros = @()
+          $svc = Get-Service -Name "Suporte" -ErrorAction SilentlyContinue
+          if ($svc) { "serviço: $($svc.Name) $($svc.Status) $($svc.StartType)" } else { $erros += "serviço Suporte não criado" }
+          if ($svc -and $svc.Status -ne "Running") { $erros += "serviço parado" }
+          $exe = "$env:ProgramFiles\Suporte\Suporte.exe"
+          if (Test-Path $exe) { "executável: $exe" } else { $erros += "faltando $exe" }
+          $cfg = "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming"
+          if (Test-Path "$cfg\Suporte\config") { "config do app: $cfg\Suporte\config (custom lido)" } else { $erros += "pasta de config Suporte não existe: o app não leu o config embutido" }
+          if (Test-Path "$cfg\RustDesk") { $erros += "o app criou config em RustDesk (config embutido ignorado)" }
+          $app = Get-ChildItem HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object DisplayName -eq "Suporte"
+          if ($app) { "Aplicativos instalados: $($app.DisplayName) $($app.DisplayVersion)" } else { $erros += "não aparece em Aplicativos instalados" }
+          if (Test-Path "$env:PUBLIC\Desktop\Suporte.lnk") { "atalho: Área de Trabalho\Suporte.lnk" } else { $erros += "sem atalho Suporte na Área de Trabalho" }
+          if ($erros) { $erros | ForEach-Object { "::error::$_" }; throw "instalação" }
+
+      - name: Serviço volta depois de desinstalar e reinstalar o serviço
+        shell: pwsh
+        run: |
+          $exe = "$env:ProgramFiles\Suporte\Suporte.exe"
+          Start-Process $exe -ArgumentList "--uninstall-service" -Wait; Start-Sleep 10
+          Start-Process $exe -ArgumentList "--install-service" -Wait; Start-Sleep 20
+          $svc = Get-Service -Name "Suporte" -ErrorAction SilentlyContinue
+          "serviço depois: $($svc.Status)"
+          $opt = Get-ChildItem "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\Suporte\config" -Filter "Suporte2.toml" -ErrorAction SilentlyContinue
+          if ($opt -and (Select-String -Path $opt.FullName -Pattern "stop-service = 'Y'" -Quiet)) { "::error::stop-service=Y gravado"; throw "stop-service" }
+          if (-not $svc -or $svc.Status -ne "Running") { "::error::serviço não voltou"; throw "serviço" }
+
+      - name: Senha permanente, ID e conexão do técnico (direta e relay)
+        shell: pwsh
+        env:
+          E2E_SENHA: ${{ secrets.E2E_SENHA }}
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          function Print($nome) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\prints" | Out-Null; $bmp.Save("$env:RUNNER_TEMP\prints\$nome.png"); "print: $nome"
+          }
+          $exe = "$env:ProgramFiles\Suporte\Suporte.exe"
+          $saida = & $exe --password $env:E2E_SENHA 2>&1 | Out-String; "--password: $($saida.Trim())"
+          if ($saida -notmatch "Done") { throw "senha permanente não gravada" }
+          $id = (& $exe --get-id 2>&1 | Out-String).Trim(); "ID do cliente: $id"
+          if ($id -notmatch '^\d{6,12}$') { throw "ID inválido" }
+          $tec = Get-ChildItem "$env:RUNNER_TEMP\dl\tec" -Recurse -Filter "assist-tecnico.exe" | Select-Object -First 1
+          $falhas = 0
+          foreach ($modo in @("direta", "relay")) {
+            $args_ = @("--connect", $id, "--password", $env:E2E_SENHA); if ($modo -eq "relay") { $args_ += "--relay" }
+            Get-Process | Where-Object { $_.ProcessName -like "assist-tecnico*" -or $_.ProcessName -like "ASSIST-Tecnico*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep 3
+            Start-Process $tec.FullName -ArgumentList $args_
+            Start-Sleep 40
+            Print "conexao-$modo"
+            $logs = Get-ChildItem "$env:APPDATA\ASSIST-Tecnico\log" -Recurse -Filter *.log -ErrorAction SilentlyContinue
+            "--- log do técnico ($modo)"
+            $linhas = $logs | ForEach-Object { Get-Content $_.FullName } | Select-String -Pattern "Session|Connection|connected|relay|secure|ERROR"
+            $linhas | Select-Object -Last 15 | ForEach-Object { $_.Line }
+            if ($linhas | Where-Object { $_.Line -match "ERROR.*(Connection closed|Failed)" }) { "::error::conexão $modo falhou"; $falhas++ }
+          }
+          "--- log do cliente (servidor)"
+          Get-ChildItem "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\Suporte\log" -Recurse -Filter *.log -ErrorAction SilentlyContinue |
+            ForEach-Object { Get-Content $_.FullName } | Select-String -Pattern "Connection|Logon|login|authorized|password" | Select-Object -Last 20 | ForEach-Object { $_.Line }
+          if ($falhas) { throw "conexão do técnico falhou" }
+
+      - name: App do cliente nos modos claro e escuro
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          function Print($nome) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save("$env:RUNNER_TEMP\prints\$nome.png"); "print: $nome"
+          }
+          Get-Process | Where-Object { $_.ProcessName -like "assist-tecnico*" -or $_.ProcessName -like "ASSIST-Tecnico*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          $exe = "$env:ProgramFiles\Suporte\Suporte.exe"
+          $k = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+          New-Item -Force $k | Out-Null
+          foreach ($tema in @(@("claro", 1), @("escuro", 0))) {
+            Set-ItemProperty $k -Name AppsUseLightTheme -Value $tema[1] -Type DWord
+            Get-Process | Where-Object { $_.Path -eq $exe -and $_.SessionId -ne 0 } | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep 3; Start-Process $exe; Start-Sleep 20
+            Print "cliente-$($tema[0])"
+          }
+
+      - name: Guardar prints
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prints-windows
+          path: ${{ runner.temp }}/prints/*.png
+          retention-days: 3
+
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout: teste }
+      - name: Conferir pacotes e pasta de configuração
+        shell: bash
+        run: |
+          set -u
+          alvo=$(head -1 teste/alvo 2>/dev/null || echo homologacao)
+          if [ "$alvo" = producao ]; then cli=https://rd.assist.com.br/downloads; tec=https://rd.assist.com.br/tecnico
+          else cli=https://rd.assist.com.br/homologacao/cliente; tec=https://rd.assist.com.br/homologacao/tecnico; fi
+          echo "alvo: $alvo"; erros=0; err() { echo "::error::$*"; erros=$((erros+1)); }
+          cd "$RUNNER_TEMP"
+          for par in "$cli|assist-suporte-aarch64.dmg|Suporte|br.com.assist.suporte" "$tec|assist-tecnico-aarch64.dmg|ASSIST-Tecnico|br.com.assist.tecnico"; do
+            IFS='|' read -r base dmg nome bid <<< "$par"
+            curl -fsS -u "$DL_USUARIO:$DL_SENHA" -o "$dmg" "$base/$dmg"; curl -fsS -u "$DL_USUARIO:$DL_SENHA" -o "SUMS-$nome" "$base/SHA256SUMS"
+            grep "  $dmg$" "SUMS-$nome" | shasum -a 256 -c - || err "SHA-256 $dmg"
+            hdiutil attach -nobrowse -readonly -mountpoint "/tmp/m-$nome" "$dmg" >/dev/null
+            app="/tmp/m-$nome/$nome.app"; [ -d "$app" ] || { err "sem $nome.app no $dmg"; continue; }
+            got=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app/Contents/Info.plist"); echo "$nome bundle id: $got"
+            [ "$got" = "$bid" ] || err "$nome bundle id $got (esperado $bid)"
+            [ -s "$app/Contents/Resources/custom_.txt" ] && echo "$nome: custom_.txt em Resources" || err "$nome sem Contents/Resources/custom_.txt"
+            find "$app" -path "*flutter_assets/assets/logo_dark.png" | grep -q . && echo "$nome: logo_dark.png presente" || err "$nome sem logo_dark.png"
+            cp -R "$app" /Applications/; hdiutil detach "/tmp/m-$nome" -quiet
+          done
+          for nome in Suporte ASSIST-Tecnico; do open -a "/Applications/$nome.app" || err "não abriu $nome"; done
+          sleep 30
+          ls -d ~/Library/Preferences/com.carriez.* 2>/dev/null || true
+          for nome in Suporte ASSIST-Tecnico; do
+            [ -d ~/Library/Preferences/com.carriez.$nome ] && echo "$nome: config próprio em com.carriez.$nome" || err "$nome não criou com.carriez.$nome (config embutido ignorado)"
+          done
+          [ -d ~/Library/Preferences/com.carriez.RustDesk ] && err "algum app gravou em com.carriez.RustDesk (pasta do RustDesk oficial)"
+          [ "$erros" -eq 0 ] || exit 1
+
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout: teste }
+      - name: Conferir pacotes e pasta de configuração
+        shell: bash
+        run: |
+          set -u
+          alvo=$(head -1 teste/alvo 2>/dev/null || echo homologacao)
+          if [ "$alvo" = producao ]; then cli=https://rd.assist.com.br/downloads; else cli=https://rd.assist.com.br/homologacao/cliente; fi
+          echo "alvo: $alvo"; erros=0; err() { echo "::error::$*"; erros=$((erros+1)); }
+          cd "$RUNNER_TEMP"
+          for f in assist-suporte-x86_64.deb assist-suporte-x86_64.rpm SHA256SUMS; do curl -fsS -u "$DL_USUARIO:$DL_SENHA" -o "$f" "$cli/$f"; done
+          grep -E "  assist-suporte-x86_64\.(deb|rpm)$" SHA256SUMS | sha256sum -c - || err "SHA-256"
+          dpkg-deb -c assist-suporte-x86_64.deb | grep -q "usr/share/suporte/custom_.txt" && echo "deb: custom_.txt ao lado do executável" || err "deb sem usr/share/suporte/custom_.txt"
+          dpkg-deb -c assist-suporte-x86_64.deb | grep -q "logo_dark.png" && echo "deb: logo_dark.png presente" || err "deb sem logo_dark.png"
+          sudo apt-get install -y -qq rpm xvfb >/dev/null
+          rpm -qlp assist-suporte-x86_64.rpm 2>/dev/null | grep -q "/usr/share/suporte/custom_.txt" && echo "rpm: custom_.txt ao lado do executável" || err "rpm sem /usr/share/suporte/custom_.txt"
+          sudo apt-get install -y -qq ./assist-suporte-x86_64.deb >/dev/null || err "deb não instalou"
+          bin=$(dpkg -L suporte | grep -E "/usr/share/suporte/suporte$" | head -1); echo "executável: $bin"
+          timeout 30 xvfb-run -a "$bin" >/dev/null 2>&1 || true
+          ls -d ~/.config/*/ 2>/dev/null | grep -iE "suporte|rustdesk" || true
+          [ -d ~/.config/suporte ] && echo "config próprio em ~/.config/suporte" || err "não criou ~/.config/suporte (config embutido ignorado)"
+          [ -d ~/.config/rustdesk ] && err "criou ~/.config/rustdesk"
+          [ "$erros" -eq 0 ] || exit 1
