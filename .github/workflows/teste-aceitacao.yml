@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  DL_USUARIO: ${{ secrets.DL_USUARIO }}
+  DL_USUARIO: suporte   # não é segredo; como segredo, o GitHub mascarava "suporte" em todo o log
   DL_SENHA: ${{ secrets.DL_SENHA }}
 
 jobs:
@@ -151,7 +151,7 @@ jobs:
       - name: Conferir pacotes e pasta de configuração
         shell: bash
         run: |
-          set -u
+          set +e   # os erros são contados em err(); listar todos em vez de parar no primeiro
           alvo=$(head -1 teste/alvo 2>/dev/null || echo homologacao)
           if [ "$alvo" = producao ]; then cli=https://rd.assist.com.br/downloads; tec=https://rd.assist.com.br/tecnico
           else cli=https://rd.assist.com.br/homologacao/cliente; tec=https://rd.assist.com.br/homologacao/tecnico; fi
@@ -187,7 +187,7 @@ jobs:
       - name: Conferir pacotes e pasta de configuração
         shell: bash
         run: |
-          set -u
+          set +e   # os erros são contados em err(); listar todos em vez de parar no primeiro
           alvo=$(head -1 teste/alvo 2>/dev/null || echo homologacao)
           if [ "$alvo" = producao ]; then cli=https://rd.assist.com.br/downloads; else cli=https://rd.assist.com.br/homologacao/cliente; fi
           echo "alvo: $alvo"; erros=0; err() { echo "::error::$*"; erros=$((erros+1)); }
