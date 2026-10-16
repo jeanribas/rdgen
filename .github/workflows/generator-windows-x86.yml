@@ -533,6 +533,17 @@ jobs:
         run: |
           mv ./SignOutput/rustdesk.exe "./SignOutput/${{ env.filename }}.exe" || echo "rustdesk"
 
+      - name: Upload custom client as workflow artifact (ASSIST artifact mode)
+        if: ${{ env.rdgen == 'artifact' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-client-windows-x86-${{ matrix.job.arch || 'x64' }}
+          path: |
+            ./SignOutput/${{ env.filename }}.exe
+            ./SignOutput/${{ env.filename }}.msi
+          if-no-files-found: error
+          retention-days: 7
+
       - name: send file to rdgen server
         if: ${{ env.rdgen == 'true' }}
         shell: bash

@@ -690,6 +690,16 @@ jobs:
         run: |
           cp ./res/rustdesk-${{ env.VERSION }}-0-x86_64.pkg.tar.zst ./output/${{ env.filename }}-${{ matrix.job.arch }}.pkg.tar.zst
 
+      - name: Upload custom client as workflow artifact (ASSIST artifact mode)
+        if: ${{ env.rdgen == 'artifact' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-client-linux-${{ matrix.job.arch || 'x64' }}
+          path: |
+            ./output/${{ env.filename }}-*
+          if-no-files-found: error
+          retention-days: 7
+
       - name: send file to rdgen server
         if: ${{ env.rdgen == 'true' }}
         uses: nick-fields/retry@v3
@@ -1226,6 +1236,16 @@ jobs:
               mv "$name" /workspace/output/"${{ env.filename }}-unattended-wayland-x86_64.deb"
             done
 
+      - name: Upload custom client as workflow artifact (ASSIST artifact mode)
+        if: ${{ env.rdgen == 'artifact' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-client-linux-${{ matrix.job.arch || 'x64' }}
+          path: |
+            ./output/${{ env.filename }}-*
+          if-no-files-found: error
+          retention-days: 7
+
       - name: send file to rdgen server
         if: ${{ env.rdgen == 'true' && env.DRM_SUPPORTED == 'true' }}
         uses: nick-fields/retry@v3
@@ -1375,6 +1395,16 @@ jobs:
           sudo mv "$src" "./$dest"
           popd
 
+      - name: Upload custom client as workflow artifact (ASSIST artifact mode)
+        if: ${{ env.rdgen == 'artifact' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-client-linux-${{ matrix.job.arch || 'x64' }}
+          path: |
+            ./output/${{ env.filename }}-*
+          if-no-files-found: error
+          retention-days: 7
+
       - name: send file to rdgen server
         if: ${{ env.rdgen == 'true' }}
         uses: nick-fields/retry@v3
@@ -1513,6 +1543,16 @@ jobs:
             git clone https://github.com/flathub/shared-modules.git --depth=1
             flatpak-builder --user --install-deps-from=flathub -y --force-clean --repo=repo ./build ./rustdesk.json
             flatpak build-bundle ./repo ${{ env.filename }}-${{ matrix.job.arch }}.flatpak "$BUNDLE_ID"
+
+      - name: Upload custom client as workflow artifact (ASSIST artifact mode)
+        if: ${{ env.rdgen == 'artifact' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-client-linux-${{ matrix.job.arch || 'x64' }}
+          path: |
+            ./output/${{ env.filename }}-*
+          if-no-files-found: error
+          retention-days: 7
 
       - name: send file to rdgen server
         if: ${{ env.rdgen == 'true' }}
