@@ -556,8 +556,11 @@ jobs:
             chmod 777 output -R
             export CARGO_INCREMENTAL=0
             export DEB_ARCH=${{ matrix.job.deb_arch }}
-            mkdir -p flutter/tmpdeb/usr/share/rustdesk
-            cp ./custom_.txt ./flutter/tmpdeb/usr/share/rustdesk/custom_.txt
+            # ASSIST: o binário do .deb fica em /usr/share/<appname>/ (build.py renomeado acima) e o app
+            # lê custom_.txt ao lado do executável. Em /usr/share/rustdesk/ o config era ignorado.
+            APPDIR="${{ env.appname }}"; [ -z "$APPDIR" ] && APPDIR=rustdesk
+            mkdir -p "flutter/tmpdeb/usr/share/$APPDIR"
+            cp ./custom_.txt "./flutter/tmpdeb/usr/share/$APPDIR/custom_.txt"
             if [[ "${{ env.logolink_url }}" != "false" ]]; then
               wget -O ./flutter/assets/logo.png ${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}"&"uuid=${{ env.logolink_uuid }}
             fi
@@ -624,6 +627,8 @@ jobs:
 
             python3 ./build.py --flutter --skip-cargo
             for name in *.deb; do
+              # ASSIST: o config tem que estar ao lado do executável dentro do pacote.
+              dpkg-deb -c "$name" | grep -q "usr/share/$APPDIR/custom_.txt" || { echo "::error::custom_.txt fora de /usr/share/$APPDIR no $name"; exit 1; }
               mv "$name" /workspace/output/"${{ env.filename }}-${{ matrix.job.arch }}.deb"
             done
 
@@ -1185,8 +1190,11 @@ jobs:
             chmod 777 output -R
             export CARGO_INCREMENTAL=0
             export DEB_ARCH=amd64
-            mkdir -p flutter/tmpdeb/usr/share/rustdesk
-            cp ./custom_.txt ./flutter/tmpdeb/usr/share/rustdesk/custom_.txt
+            # ASSIST: o binário do .deb fica em /usr/share/<appname>/ (build.py renomeado acima) e o app
+            # lê custom_.txt ao lado do executável. Em /usr/share/rustdesk/ o config era ignorado.
+            APPDIR="${{ env.appname }}"; [ -z "$APPDIR" ] && APPDIR=rustdesk
+            mkdir -p "flutter/tmpdeb/usr/share/$APPDIR"
+            cp ./custom_.txt "./flutter/tmpdeb/usr/share/$APPDIR/custom_.txt"
             if [[ "${{ env.logolink_url }}" != "false" ]]; then
               wget -O ./flutter/assets/logo.png ${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}"&"uuid=${{ env.logolink_uuid }}
             fi
