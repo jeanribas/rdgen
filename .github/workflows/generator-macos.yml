@@ -606,7 +606,12 @@ jobs:
         continue-on-error: false
         shell: bash
         run: |
-          ASSETS_DIR="build/macos/Build/Products/Release/RustDesk.app/Contents/Frameworks/App.framework/Versions/Current/Resources/flutter_assets/assets"
+          # ASSIST: o app real fica em flutter/build/... e tem o nome do APPNAME; o caminho fixo
+          # build/.../RustDesk.app não existia e as imagens não entravam no app.
+          APP=$(find ./flutter/build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -n 1)
+          [ -n "$APP" ] || { echo "::error::app não encontrado em flutter/build/macos"; exit 1; }
+          ASSETS_DIR="$APP/Contents/Frameworks/App.framework/Versions/Current/Resources/flutter_assets/assets"
+          [ -d "$ASSETS_DIR" ] || { echo "::error::sem flutter_assets em $APP"; exit 1; }
           mkdir -p "$ASSETS_DIR"
           if [ -f "$ASSETS_DIR/icon.svg" ]; then
             mv "$ASSETS_DIR/icon.svg" "$ASSETS_DIR/icon.svg.bak"
@@ -622,7 +627,12 @@ jobs:
         continue-on-error: false
         shell: bash
         run: |
-          ASSETS_DIR="build/macos/Build/Products/Release/RustDesk.app/Contents/Frameworks/App.framework/Versions/Current/Resources/flutter_assets/assets"
+          # ASSIST: o app real fica em flutter/build/... e tem o nome do APPNAME; o caminho fixo
+          # build/.../RustDesk.app não existia e as imagens não entravam no app.
+          APP=$(find ./flutter/build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -n 1)
+          [ -n "$APP" ] || { echo "::error::app não encontrado em flutter/build/macos"; exit 1; }
+          ASSETS_DIR="$APP/Contents/Frameworks/App.framework/Versions/Current/Resources/flutter_assets/assets"
+          [ -d "$ASSETS_DIR" ] || { echo "::error::sem flutter_assets em $APP"; exit 1; }
           mkdir -p "$ASSETS_DIR"
           curl -k -L --tlsv1.2 --proto =https --ssl-reqd \
             -H "User-Agent: Mozilla/5.0" \
@@ -634,6 +644,8 @@ jobs:
           # ASSIST: logo do modo escuro (o app 1.5.0 usa assets/logo_dark.png no tema escuro)
           curl -fsSL --tlsv1.2 --proto =https "${{ env.logolink_url }}/get_png?filename=logo_dark.png&uuid=${{ env.logolink_uuid }}" -o "$ASSETS_DIR/logo_dark.png"
           test -s "$ASSETS_DIR/logo_dark.png" || { echo "::error::logo_dark.png não baixado"; exit 1; }
+          test -s "$ASSETS_DIR/logo.png" || { echo "::error::logo.png não está no app"; exit 1; }
+          ls -l "$ASSETS_DIR"/logo*.png
 
       - name: Sign macOS app bundle
         if: env.MACOS_P12_BASE64 != ''
