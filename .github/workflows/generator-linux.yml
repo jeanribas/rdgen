@@ -737,6 +737,8 @@ jobs:
 
   build-rustdesk-linux-drm:
     needs: [generate-bridge-linux, setup]
+    # ASSIST: a variante DRM (Linux sem tela) não é publicada e quebra em build com versão fixa.
+    if: false
     name: build rustdesk linux drm x86_64
     runs-on: ubuntu-22.04
     # Only rustdesk's master branch carries the drm/libdrmtap support this job
@@ -1408,6 +1410,8 @@ jobs:
             curl -i -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./appimage/${{ env.filename }}-${{ matrix.job.arch }}.AppImage" ${{ env.apiServer }}/api/save_custom_client
 
   build-flatpak:
+    # ASSIST: Flatpak não é publicado; o app id com hífen (assist-suporte) é inválido para Flatpak.
+    if: false
     name: Build flatpak ${{ matrix.job.target }}${{ matrix.job.suffix }}
     needs:
       - build-rustdesk-linux
