@@ -77,15 +77,18 @@ jobs:
       - name: Senha permanente e ID
         shell: pwsh
         run: |
-          $dir = Get-ChildItem $env:ProgramFiles -Directory | Where-Object Name -like "*Suporte*" | Select-Object -First 1
-          $exe = Get-ChildItem $dir.FullName -Filter "*Suporte*.exe" | Where-Object Name -notlike "Uninstall*" | Select-Object -First 1
+          # Usar exatamente o executável que o serviço roda.
+          $svc = Get-CimInstance Win32_Service | Where-Object { $_.Name -like "*Suporte*" } | Select-Object -First 1
+          if (-not $svc) { throw "serviço não encontrado" }
+          $exe = Get-Item ([regex]::Match($svc.PathName, '^"?([^"]+?\.exe)').Groups[1].Value)
+          "executável do serviço: $($exe.FullName)"
           $senha = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 24 | ForEach-Object { [char]$_ })
           "::add-mask::$senha"
           $saida = & $exe.FullName --password $senha 2>&1 | Out-String
           "--password: $($saida.Trim())"
           Start-Sleep 5
           $toml = Get-ChildItem "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming" -Recurse -Filter "*.toml" -ErrorAction SilentlyContinue |
-            Where-Object { $_.Directory.Name -eq "config" -and $_.Name -notlike "*2.toml" -and $_.Name -notlike "*_*" }
+            Where-Object { $_.Directory.Name -eq "config" -and $_.BaseName -notmatch '(2|_local|_default)$' }
           $gravada = $toml | Where-Object { Select-String -Path $_.FullName -Pattern "^password = '.+'" -Quiet }
           if ($gravada) { "senha permanente gravada em $($gravada.FullName)" } else { "::error::senha permanente não gravada"; throw "senha" }
           $id = (& $exe.FullName --get-id 2>&1 | Out-String).Trim()
