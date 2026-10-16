@@ -563,6 +563,8 @@ jobs:
             cp ./custom_.txt "./flutter/tmpdeb/usr/share/$APPDIR/custom_.txt"
             if [[ "${{ env.logolink_url }}" != "false" ]]; then
               wget -O ./flutter/assets/logo.png ${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}"&"uuid=${{ env.logolink_uuid }}
+              # ASSIST: logo do modo escuro (o app 1.5.0 usa assets/logo_dark.png no tema escuro)
+              wget -O ./flutter/assets/logo_dark.png ${{ env.logolink_url }}/get_png?filename=logo_dark.png"&"uuid=${{ env.logolink_uuid }}
             fi
             if [[ "${{ env.iconlink_url }}" != "false" ]]; then
               mv ./flutter/assets/icon.svg ./flutter/assets/icon.svg.bak
@@ -1197,6 +1199,8 @@ jobs:
             cp ./custom_.txt "./flutter/tmpdeb/usr/share/$APPDIR/custom_.txt"
             if [[ "${{ env.logolink_url }}" != "false" ]]; then
               wget -O ./flutter/assets/logo.png ${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}"&"uuid=${{ env.logolink_uuid }}
+              # ASSIST: logo do modo escuro (o app 1.5.0 usa assets/logo_dark.png no tema escuro)
+              wget -O ./flutter/assets/logo_dark.png ${{ env.logolink_url }}/get_png?filename=logo_dark.png"&"uuid=${{ env.logolink_uuid }}
             fi
             if [[ "${{ env.iconlink_url }}" != "false" ]]; then
               mv ./flutter/assets/icon.svg ./flutter/assets/icon.svg.bak
