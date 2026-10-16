@@ -97,3 +97,27 @@ jobs:
           if ($id -notmatch '^\d{6,12}$') { throw "ID inválido" }
           # Dar tempo para o serviço se registrar no servidor (o ID é conferido no hbbs).
           Start-Sleep 60
+
+      - name: Print da janela do app
+        if: matrix.tipo == 'exe'
+        shell: pwsh
+        run: |
+          $svc = Get-CimInstance Win32_Service | Where-Object { $_.Name -like "*Suporte*" } | Select-Object -First 1
+          $exe = [regex]::Match($svc.PathName, '^"?([^"]+?\.exe)').Groups[1].Value
+          Start-Process $exe
+          Start-Sleep 20
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save("$env:RUNNER_TEMP\tela-app.png")
+          "print salvo: $($b.Width)x$($b.Height)"
+
+      - name: Guardar o print
+        if: matrix.tipo == 'exe'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tela-app
+          path: ${{ runner.temp }}/tela-app.png
+          retention-days: 3
