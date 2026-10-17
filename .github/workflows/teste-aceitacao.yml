@@ -108,11 +108,15 @@ jobs:
             "--- log do técnico ($modo)"
             $linhas = $logs | ForEach-Object { Get-Content $_.FullName } | Select-String -Pattern "Session|Connection|connected|relay|secure|ERROR"
             $linhas | Select-Object -Last 15 | ForEach-Object { $_.Line }
-            if ($linhas | Where-Object { $_.Line -match "ERROR.*(Connection closed|Failed)" }) { "::error::conexão $modo falhou"; $falhas++ }
+            # Só erro de conexão reprova; "Failed to get hwcodec config" é aviso de 1ª execução.
+            if ($linhas | Where-Object { $_.Line -match "Connection closed|Failed to secure|Connection error" }) { "::error::conexão $modo falhou"; $falhas++ }
           }
           "--- log do cliente (servidor)"
           Get-ChildItem "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\Suporte\log" -Recurse -Filter *.log -ErrorAction SilentlyContinue |
             ForEach-Object { Get-Content $_.FullName } | Select-String -Pattern "Connection|Logon|login|authorized|password" | Select-Object -Last 20 | ForEach-Object { $_.Line }
+          $abertas = (Get-ChildItem "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\Suporte\log" -Recurse -Filter *.log -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName } | Select-String -Pattern "Connection opened from").Count
+          "conexões abertas no cliente: $abertas"
+          if ($abertas -lt 1) { "::error::nenhuma conexão chegou ao cliente"; $falhas++ }
           if ($falhas) { throw "conexão do técnico falhou" }
 
       - name: App do cliente nos modos claro e escuro
