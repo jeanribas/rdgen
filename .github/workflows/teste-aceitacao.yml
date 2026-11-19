@@ -93,6 +93,8 @@ jobs:
           $exe = "$env:ProgramFiles\Suporte\Suporte.exe"
           $saida = & $exe --password $env:E2E_SENHA 2>&1 | Out-String; "--password: $($saida.Trim())"
           if ($saida -notmatch "Done") { throw "senha permanente não gravada" }
+          $v = (& $exe --option allow-remote-config-modification 2>&1 | Out-String).Trim(); "allow-remote-config-modification: $v"
+          if ($v -ne "Y") { "::error::allow-remote-config-modification=$v (esperado Y)"; throw "modificação remota de configuração" }
           $id = (& $exe --get-id 2>&1 | Out-String).Trim(); "ID do cliente: $id"
           if ($id -notmatch '^\d{6,12}$') { throw "ID inválido" }
           $tec = Get-ChildItem "$env:RUNNER_TEMP\dl\tec" -Recurse -Filter "assist-tecnico.exe" | Select-Object -First 1
@@ -172,6 +174,11 @@ jobs:
             [ "$got" = "$bid" ] || err "$nome bundle id $got (esperado $bid)"
             [ -s "$app/Contents/Resources/custom_.txt" ] && echo "$nome: custom_.txt em Resources" || err "$nome sem Contents/Resources/custom_.txt"
             for lg in logo.png logo_dark.png; do [ -n "$(find "$app" -path "*flutter_assets/assets/$lg" -print -quit)" ] && echo "$nome: $lg presente" || err "$nome sem $lg"; done
+            if [ "$nome" = Suporte ]; then  # o técnico não precisa; no cliente a tela de Configurações trava sem Y
+              cfg=$(base64 --decode < "$app/Contents/Resources/custom_.txt")
+              jq -e '((.["override-settings"]["allow-remote-config-modification"] // .["default-settings"]["allow-remote-config-modification"]) == "Y")' <<< "$cfg" >/dev/null && echo "Suporte: modificação remota de configuração liberada (Y)" || err "Suporte: allow-remote-config-modification efetivo não é Y"
+              jq -e '((.["override-settings"]["allow-remote-cm-modification"] // .["default-settings"]["allow-remote-cm-modification"] // "N") != "Y")' <<< "$cfg" >/dev/null && echo "Suporte: allow-remote-cm-modification desligada" || err "Suporte: allow-remote-cm-modification ligada (Y)"
+            fi
             cp -R "$app" /Applications/; hdiutil detach "/tmp/m-$nome" -quiet
           done
           for nome in Suporte ASSIST-Tecnico; do open -a "/Applications/$nome.app" || err "não abriu $nome"; done
@@ -203,6 +210,11 @@ jobs:
           deb=$(dpkg-deb -c assist-suporte-x86_64.deb)
           grep -q "usr/share/suporte/custom_.txt" <<< "$deb" && echo "deb: custom_.txt ao lado do executável" || err "deb sem usr/share/suporte/custom_.txt"
           grep -q "assets/logo_dark.png" <<< "$deb" && echo "deb: logo_dark.png presente" || err "deb sem logo_dark.png"
+          # custom_.txt é base64 do JSON do config. Valor efetivo (override ganha do default): modificação remota tem de ser Y e a trava de conexão (allow-remote-cm-modification) não pode estar ligada
+          cfg_b64=$(dpkg-deb --fsys-tarfile assist-suporte-x86_64.deb | tar -xO --wildcards '*usr/share/suporte/custom_.txt')
+          cfg=$(base64 --decode <<< "$cfg_b64")
+          jq -e '((.["override-settings"]["allow-remote-config-modification"] // .["default-settings"]["allow-remote-config-modification"]) == "Y")' <<< "$cfg" >/dev/null && echo "deb: modificação remota de configuração liberada (Y)" || err "deb: allow-remote-config-modification efetivo não é Y"
+          jq -e '((.["override-settings"]["allow-remote-cm-modification"] // .["default-settings"]["allow-remote-cm-modification"] // "N") != "Y")' <<< "$cfg" >/dev/null && echo "deb: allow-remote-cm-modification desligada" || err "deb: allow-remote-cm-modification ligada (Y)"
           sudo apt-get install -y -qq rpm xvfb >/dev/null
           rpml=$(rpm -qlp assist-suporte-x86_64.rpm 2>/dev/null); grep -q "/usr/share/suporte/custom_.txt" <<< "$rpml" && echo "rpm: custom_.txt ao lado do executável" || err "rpm sem /usr/share/suporte/custom_.txt"
           sudo apt-get install -y -qq ./assist-suporte-x86_64.deb >/dev/null || err "deb não instalou"
