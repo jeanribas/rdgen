@@ -150,7 +150,7 @@ jobs:
           retention-days: 3
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -215,6 +215,7 @@ jobs:
           cfg=$(base64 --decode <<< "$cfg_b64")
           jq -e '((.["override-settings"]["allow-remote-config-modification"] // .["default-settings"]["allow-remote-config-modification"]) == "Y")' <<< "$cfg" >/dev/null && echo "deb: modificação remota de configuração liberada (Y)" || err "deb: allow-remote-config-modification efetivo não é Y"
           jq -e '((.["override-settings"]["allow-remote-cm-modification"] // .["default-settings"]["allow-remote-cm-modification"] // "N") != "Y")' <<< "$cfg" >/dev/null && echo "deb: allow-remote-cm-modification desligada" || err "deb: allow-remote-cm-modification ligada (Y)"
+          sudo apt-get update -qq >/dev/null   # índice da imagem fica velho: sem isso as dependências do .deb dão 404
           sudo apt-get install -y -qq rpm xvfb >/dev/null
           rpml=$(rpm -qlp assist-suporte-x86_64.rpm 2>/dev/null); grep -q "/usr/share/suporte/custom_.txt" <<< "$rpml" && echo "rpm: custom_.txt ao lado do executável" || err "rpm sem /usr/share/suporte/custom_.txt"
           sudo apt-get install -y -qq ./assist-suporte-x86_64.deb >/dev/null || err "deb não instalou"
